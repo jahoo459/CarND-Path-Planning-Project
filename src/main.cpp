@@ -14,15 +14,12 @@ using nlohmann::json;
 using std::string;
 using std::vector;
 
-int lane = 1;
+int lane = 1; //default lane
 double ref_vel = 0;
 double max_speed = 49.5;
+double min_distance_to_car = 20;
+double min_gap_length = 15;
 
-double calculate_cost(double min_dist, double speed)
-{
-  double cost = 0;
-  return cost;
-}
 
 class Car
 {
@@ -49,31 +46,46 @@ class LaneStatus
   void update(double ego_s)
   {
     //find closest car_front_dist_s
-    int closest = 100000;
+    int closest_front = 100000;
+    int closest_behind = 100000;
     int idx;
     for(int idx = 0; idx < carsOnLane.size(); idx++)
     {
-      if (carsOnLane[idx].s - ego_s < closest && carsOnLane[idx].s - ego_s > 0)
+      if (carsOnLane[idx].s - ego_s < closest_front && carsOnLane[idx].s - ego_s > 0)
       {
-        closest = carsOnLane[idx].s - ego_s;
+        closest_front = carsOnLane[idx].s - ego_s;
+      }
+
+      if(carsOnLane[idx].s < ego_s  && (ego_s - carsOnLane[idx].s) < closest_behind) // this one is behind
+      {
+        closest_behind = abs(carsOnLane[idx].s - ego_s);
       }
     }
-    closest_car_front_dist_s = closest;
+    closest_car_front_dist_s = closest_front;
+    closest_car_rear_dist_s = closest_behind;
 
     //find closest_car_speed
-    closest_car_speed = carsOnLane[idx].speed;
+    closest_car_front_speed = carsOnLane[idx].speed;
 
     //check if gap existing
+    if((closest_car_front_dist_s + closest_car_rear_dist_s) > min_gap_length && closest_car_rear_dist_s >= 7 &&closest_car_front_dist_s >= 7)
+    {
+      gap_existing = true;
+    }
 
-    //check the gap_length
+    if(closest_car_front_dist_s < 5 || closest_car_rear_dist_s < 5)
+    {
+      gap_existing = false;
+    }
+
   }
 
   int lane_num;
   double closest_car_front_dist_s;
+  double closest_car_rear_dist_s;
   // vector<double> previous_speeds;
-  double closest_car_speed = 0;
+  double closest_car_front_speed = 0;
   bool gap_existing = false;
-  double gap_length = 0;
   vector<Car> carsOnLane;
 };
 
@@ -165,7 +177,6 @@ int main() {
 
           int prev_size = previous_path_x.size();
           // int lane = 1;
-          // double ref_vel = 49.5;
           json msgJson;
 
 
@@ -232,7 +243,6 @@ int main() {
 
               Car car;
               car.d = d;
-              //car.id = car_id_counter;
               car.s = check_car_s;
               car.speed = target_speed;
               lanes[2].carsOnLane.push_back(car);
@@ -240,14 +250,8 @@ int main() {
             }
           }
 
-          // for(int i = 0; i < 3; i++)
-          // {
-          //   std::cout << "For lane " << i << " there are " << lanes[i].carsOnLane.size() << " cars " <<
-          //   "with closest dist front " << lanes[i].closest_car_front_dist_s << " and speed " <<lanes[i].closest_car_speed << "\n";
-          // }
-
           //check if we are getting too close on the current lane
-          if(lanes[lane].closest_car_front_dist_s < 30)
+          if(lanes[lane].closest_car_front_dist_s < min_distance_to_car)
           {
             too_close = true;
           }
@@ -255,65 +259,99 @@ int main() {
           {
             too_close = false;
           }
-          
+
+          if(too_close != true && lane != 1)
+          {
+            //try to always stay on the middle line
+            if(lanes[1].closest_car_front_dist_s > 70) //lane empty
+              {
+                if(lanes[1].gap_existing)
+                {
+                  lane = 1;
+                }
+              }
+          }
+
           if(too_close == true)
           {
             // 1. adapt the speed
-            in_follower_mode = true; //this will be disabled if distance greater than 40m
-            std::cout << "I enterded the follower mode \n";
+            in_follower_mode = true; 
 
             // 2. consider changing the lane
             vector<int> alternative_lanes;
-            if(lane = 0)
+            if(ref_vel > 15)
             {
-              alternative_lanes.push_back(1);                
+              if(lane == 0)
+              {
+                alternative_lanes.push_back(1);                
+              }
+              else if(lane == 1)
+              {
+                alternative_lanes.push_back(0);
+                alternative_lanes.push_back(2);
+              }
+              else if(lane == 2)
+              {
+                alternative_lanes.push_back(1);
+              }
             }
-            else if(lane == 1)
-            {
-              alternative_lanes.push_back(0);
-              alternative_lanes.push_back(2);
-            }
-            else if(lane == 2)
-            {
-              alternative_lanes.push_back(1);
-            }
-            
-            //check which lane is currently the fastest if there is a next car in 100m
-            //if the line is empty (no car in 100m then take it)
+
+          
+            //check which lane is currently the fastest and if there is a next car in some distance
+            //if the line is empty then take it if not take the fastest one
+
             bool is_neighbouring_lane_faster = false;
-            for(int i = 0; i < alternative_lanes.size(); i++)
+            int target_lane_id = 100;
+
+            for(int i = 0; i < alternative_lanes.size(); i++) 
             {
-              if (lanes[alternative_lanes[i]].closest_car_speed > 
+              if(lanes[alternative_lanes[i]].closest_car_front_dist_s > 2 * lanes[lane].closest_car_front_dist_s) //lane empty
+              {
+                // std::cout << "There is an empty line available!\n";
+                if(lanes[alternative_lanes[i]].gap_existing)
+                {
+                  is_neighbouring_lane_faster = true;
+                  target_lane_id = alternative_lanes[i];
+                }
+              }
+              else if(lanes[alternative_lanes[i]].closest_car_front_speed > lanes[lane].closest_car_front_speed)
+              {
+                // std::cout << "There is a faster lane available \n";
+                if(lanes[alternative_lanes[i]].gap_existing)
+                {
+                  is_neighbouring_lane_faster = true;
+                  target_lane_id = alternative_lanes[i];
+                }
+              }
             }
             // now I need to update the gap information for the proposed lane
             
 
-            if(lane > 0) 
+            if(is_neighbouring_lane_faster) 
             {
-              lane = lane - 1;
-            }
-
-            for(int ii = 0; ii < 3; ii++)
-            {
-              
+              lane = target_lane_id;
             }
           }
 
           // speed adaptation
           {
-            if(lanes[lane].closest_car_front_dist_s > 60)
+            if(lanes[lane].closest_car_front_dist_s > 40)
             {
               in_follower_mode = false;
-              std::cout << "I'm not in follower mode anymore\n";
             }
 
-            if(in_follower_mode && ref_vel > lanes[lane].closest_car_speed)
+            if(in_follower_mode && lanes[lane].closest_car_front_dist_s < 4)
+            {
+              ref_vel -= .224*3;
+            }
+
+            if(in_follower_mode && ref_vel > lanes[lane].closest_car_front_speed)
             {
               ref_vel -= .224;
             }
-            else if(in_follower_mode && ref_vel < lanes[lane].closest_car_speed)
+            else if(in_follower_mode && abs(ref_vel - lanes[lane].closest_car_front_speed) < 0.3)
             {
-              ref_vel += .224;
+              ref_vel = lanes[lane].closest_car_front_speed;
             }
             else if(!in_follower_mode && ref_vel < max_speed)
             {
@@ -321,73 +359,8 @@ int main() {
             }
           }
 
-          // int counter = 0;
-          // for(int i = 0; i < sensor_fusion.size(); i++)
-          // {
-          //   // std::cout << "Sensor fusion  has " << sensor_fusion.size() <<" elements\n";
-          //   float d = sensor_fusion[i][6];
-          //   if(d < (2+4*lane+2) && d> (2+4*lane -2))
-          //   {
-          //     counter++;
-          //     double vx  = sensor_fusion[i][3];
-          //     double vy = sensor_fusion[i][4];
-          //     double target_speed = sqrt(vx*vx+vy*vy); 
-          //     double check_car_s = sensor_fusion[i][5];
-
-          //     // std::cout << "My speed: " << ref_vel << " another car: " << target_speed* 2.24 << "\n";
-
-          //     check_car_s += ((double)prev_size*.02*target_speed);
-
-          //     if((check_car_s > car_s) && ((check_car_s-car_s) < 30))
-          //     {
-          //       too_close = true;
-
-          //       //lane changing algo
-          //       // check on which line the situation is best
-          //       vector<int> alternative_lanes;
-          //       if(lane = 0)
-          //       {
-          //         alternative_lanes.push_back(1);                
-          //       }
-          //       else if(lane == 1)
-          //       {
-          //         alternative_lanes.push_back(0);
-          //         alternative_lanes.push_back(2);
-          //       }
-          //       else if(lane == 2)
-          //       {
-          //         alternative_lanes.push_back(1);
-          //       }
-                
-                
-                
-
-          //       if(lane > 0) 
-          //       {
-          //         lane = lane - 1;
-          //       }
-
-          //       for(int ii = 0; ii < 3; ii++)
-          //       {
-                  
-          //       }
-          //     }
-          //   }
-            // std::cout << "On this lane there are " << counter << "cars\n";
-          // }
-
-          
-
           vector<double> next_x_vals;
           vector<double> next_y_vals;
-
-          /**
-           * TODO: define a path made up of (x,y) points that the car will visit
-           *   sequentially every .02 seconds
-           */
-
-
-
 
           vector<double> ptsx;
           vector<double> ptsy;
@@ -395,15 +368,6 @@ int main() {
           double ref_x = car_x;
           double ref_y = car_y;
           double ref_yaw = deg2rad(car_yaw);
-
-          // double dist_inc = 0.48;
-          // for (int i = 0; i < 50; ++i) {
-
-          //   double next_s = car_s + (i+1) * dist_inc;
-          //   double next_d = 6;
-          //   next_x_vals.push_back(getXY(next_s, next_d, map_waypoints_s, map_waypoints_x, map_waypoints_y)[0]);
-          //   next_y_vals.push_back(getXY(next_s, next_d, map_waypoints_s, map_waypoints_x, map_waypoints_y)[1]);
-          // }
 
           if(prev_size < 2)
           {
