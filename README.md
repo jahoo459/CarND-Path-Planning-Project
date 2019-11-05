@@ -1,5 +1,41 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
+ 
+ 
+## Project solution description
+In this project a simple state machine was implemented in order to adapt the behaviour of the car to the situation on
+the highway. 
+ 
+For the car to take the right decisions the following values needs to be know:
+* distance to the next car on all the lines (up to x meters)
+* speed of the next car on all the lines
+* distance to the previous car on the neighbouring lines
+
+The situation on the highway is described in the LaneStatus class. There are 3 instances of this class, each describing one lane. 
+In this class all mentioned above properties are stored and updated on every step. The class method update also
+checks if there is a gap available for a lane change on the neighbouring lane. 
+
+The behaviour of the car can be described as follows:
+
+1. By default try to stay on the middle lane. It makes it easier for the future maneuvers of lane changing.
+2. If you are getting closer to the car, start reducing the speed and check if any of the neighbouring lanes
+is empty
+3. If yes, change the lane and overtake the car. Then go back to the middle lane. 
+4. If no, then check which lane is the fastest and change to it. Then follow the car on this lane, overtake the one on the middle lane 
+and go back.
+5. If the middle lane is the fastest then just stay on this lane and follow the other car.
+6. Always before changing the lane ensure that there is a gap big enough to safely change the lane.
+
+With this simple state machine the car is able to drive for long time without any incidents. One weakness that was 
+identified is when another car cuts into the ego lane. In this situation the ego car will start breaking heavily when
+getting to close to the other vehicle what might cause the jerk to exceed the allowed value. This situation happens vary
+rarely so is not that critical.
+
+
+The path planning itself was done exactly as shown in the Q&A Udacity video, using the spline library.
+ 
+ 
+ 
    
 ### Simulator.
 You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases/tag/T3_v1.2).  
