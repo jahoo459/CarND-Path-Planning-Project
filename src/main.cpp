@@ -17,17 +17,17 @@ using std::vector;
 int lane = 1; //default lane
 double ref_vel = 0;
 double max_speed = 49.5;
-double min_distance_to_car = 20;
-double min_gap_length = 15;
+double min_distance_to_car = 25;
+double min_gap_length = 20;
 
 
 class Car
 {
   public:
-  int id;
-  double speed;
-  double s;
-  double d;
+  int id = 0;
+  double speed = 0;
+  double s = 0;
+  double d = 0;
 };
 
 class LaneStatus
@@ -49,31 +49,43 @@ class LaneStatus
     int closest_front = 100000;
     int closest_behind = 100000;
     int idx;
-    for(int idx = 0; idx < carsOnLane.size(); idx++)
+    int closest_front_idx = -1;
+    
+    for(idx = 0; idx < carsOnLane.size(); idx++)
     {
+//       std::cout << "first if in update\n";
       if (carsOnLane[idx].s - ego_s < closest_front && carsOnLane[idx].s - ego_s > 0)
       {
         closest_front = carsOnLane[idx].s - ego_s;
+        closest_front_idx = idx;
       }
 
+//       std::cout << "second if in update\n";
       if(carsOnLane[idx].s < ego_s  && (ego_s - carsOnLane[idx].s) < closest_behind) // this one is behind
       {
         closest_behind = abs(carsOnLane[idx].s - ego_s);
       }
     }
+//     std::cout << "for done in update\n";
     closest_car_front_dist_s = closest_front;
     closest_car_rear_dist_s = closest_behind;
 
     //find closest_car_speed
-    closest_car_front_speed = carsOnLane[idx].speed;
+//     std::cout << "doing speed\n";
+
+    if(carsOnLane.size() > 0)
+    {
+      closest_car_front_speed = carsOnLane[closest_front_idx].speed;
+    }
 
     //check if gap existing
-    if((closest_car_front_dist_s + closest_car_rear_dist_s) > min_gap_length && closest_car_rear_dist_s >= 7 &&closest_car_front_dist_s >= 7)
+//     std::cout << "checking gap\n";
+    if((closest_car_front_dist_s + closest_car_rear_dist_s) > min_gap_length && closest_car_rear_dist_s >= 7 &&closest_car_front_dist_s >= 10)
     {
       gap_existing = true;
     }
 
-    if(closest_car_front_dist_s < 5 || closest_car_rear_dist_s < 5)
+    if(closest_car_front_dist_s < 10 || closest_car_rear_dist_s < 5)
     {
       gap_existing = false;
     }
@@ -84,8 +96,9 @@ class LaneStatus
   double closest_car_front_dist_s;
   double closest_car_rear_dist_s;
   // vector<double> previous_speeds;
-  double closest_car_front_speed = 0;
+  double closest_car_front_speed    = 0;
   bool gap_existing = false;
+
   vector<Car> carsOnLane;
 };
 
@@ -190,7 +203,6 @@ int main() {
           bool in_follower_mode = false;
 
           //Prepare the status for all 3 lines
-          //int car_id_counter = 0;
           //search for all the cars in each line and update the info
           for(int i = 0; i < 3; i++)
           {
